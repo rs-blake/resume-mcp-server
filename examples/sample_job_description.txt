@@ -1,0 +1,19 @@
+Security Architect
+
+Company: Acme Security Corp
+
+We are hiring a Security Architect to lead cloud security initiatives.
+
+Requirements:
+- 3+ years of experience in security architecture
+- Strong knowledge of AWS and Azure
+- Experience with Kubernetes and container security
+- SIEM and SOAR platform experience
+- IAM and ZTNA design skills
+
+Nice to have:
+- Terraform infrastructure as code
+- Python automation experience
+- CI/CD pipeline security
+
+Skills: AWS, Azure, Kubernetes, Docker, SIEM, IAM, Security
