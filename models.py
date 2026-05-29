@@ -1,7 +1,7 @@
 """Data models for the ResumeUp MCP server."""
 
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 import time
 
 
@@ -29,6 +29,48 @@ class ResumeData:
 
 
 @dataclass
+class FeedbackIssue:
+    """Single resume improvement issue from Report tab or feedback file."""
+
+    category: str
+    title: str
+    description: str
+    severity: str = "warning"
+    section: Optional[str] = None
+    fixable_with_ai: bool = False
+    suggested_fix: Optional[str] = None
+
+
+@dataclass
+class ResumeFeedback:
+    """Structured feedback extracted from ResumeUp analysis."""
+
+    score: Optional[int]
+    issues: List[FeedbackIssue]
+    index_scores: Dict[str, int] = field(default_factory=dict)
+    raw_text: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize feedback for MCP tool responses."""
+        return {
+            "score": self.score,
+            "index_scores": self.index_scores,
+            "issues": [
+                {
+                    "category": issue.category,
+                    "title": issue.title,
+                    "description": issue.description,
+                    "severity": issue.severity,
+                    "section": issue.section,
+                    "fixable_with_ai": issue.fixable_with_ai,
+                    "suggested_fix": issue.suggested_fix,
+                }
+                for issue in self.issues
+            ],
+        }
+
+
+@dataclass
 class BrowserSession:
     """Active Playwright browser session state."""
 
@@ -37,6 +79,7 @@ class BrowserSession:
     handler: Any
     resume_data: Optional[ResumeData] = None
     resume_id: Optional[str] = None
+    job_description_text: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     last_accessed: float = field(default_factory=time.time)
 

@@ -9,7 +9,7 @@ This project converts a Playwright-based browser automation script into a compos
 ### Key Features
 
 ✅ **Browser Automation**: Uses Playwright for reliable ResumeUp.ai interaction  
-✅ **MCP Tools**: 9 composable tools for different stages of tailoring  
+✅ **MCP Tools**: ResumeUp-only tools including one-shot `tailor_and_download`  
 ✅ **Session Management**: Persistent browser sessions with UUID tracking  
 ✅ **Job Parsing**: Intelligent extraction of skills, requirements, and company info  
 ✅ **Score Polling**: Automated re-analysis loops until target score reached  
@@ -236,7 +236,23 @@ Download the tailored resume as PDF.
 
 ---
 
-### 9. `end_browser_session`
+### 9. `tailor_and_download`
+Run the full ResumeUp-only pipeline in one call: authenticate, upload/open resume, enter job description, improve score with ResumeUp AI, and download PDF.
+
+**Input:**
+```json
+{
+  "job_description_text": "Full job description...",
+  "resume_id": "optional-uuid",
+  "file_path": "/path/to/resume.pdf",
+  "target_score": 95,
+  "output_dir": "."
+}
+```
+
+---
+
+### 10. `end_browser_session`
 Close a browser session and clean up resources.
 
 **Input:**
