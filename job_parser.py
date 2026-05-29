@@ -96,10 +96,14 @@ def extract_job_title(text: str) -> Optional[str]:
                 logger.debug(f"Extracted job title: {title}")
                 return title
     
-    # Default to first line if it looks like a title
-    first_line = text.split('\n')[0].strip()
-    if 5 < len(first_line) < 100 and not any(c in first_line for c in ['?']):
-        return first_line
+    # Default to first non-empty line if it looks like a title
+    for line in text.splitlines():
+        candidate = line.strip()
+        if not candidate:
+            continue
+        if 5 < len(candidate) < 100 and not any(c in candidate for c in ['?', ':']):
+            return candidate
+        break
     
     return None
 
