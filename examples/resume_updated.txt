@@ -1,0 +1,18 @@
+SUMMARY
+Solutions Architect specializing in cloud security, cloud computing, and technical pre-sales with deep experience across AWS, Azure, Google Cloud, Kubernetes, containers, and Terraform. Proven record driving technical pre-sales, Proof of Concept (POC) engagements, and customer onboarding for cloud-native security platforms.
+
+SKILLS
+AWS, Azure, Google Cloud, Kubernetes, Docker, Terraform, SIEM, IAM, Python, CI/CD
+
+WORK EXPERIENCE
+Solutions Architect | Revelstoke Security | Mar 2023 – Present
+- Drove technical pre-sales and POC engagements for cloud security platform adoption
+- Translated complex cloud security architectures for executive and engineering stakeholders
+- Supported customer onboarding and integration planning across AWS and Azure environments
+
+Security Solutions Architect | Swimlane | Jan 2022 – Feb 2023
+- Led automation-centric cloud security initiatives and technical documentation
+- Built repeatable POC workflows for enterprise security automation use cases
+
+EDUCATION
+Tarleton State University

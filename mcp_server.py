@@ -375,6 +375,40 @@ def _handle_improve_resume_until_target(arguments: Dict[str, Any]) -> Dict[str, 
     result["success"] = bool(result.get("success"))
     return result
 
+
+def _handle_apply_resume_text(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    session = _require_session(arguments["session_id"])
+    resume_text = (arguments.get("resume_text") or "").strip()
+    resume_file = arguments.get("resume_file")
+
+    if resume_file:
+        resume_text = Path(os.path.expanduser(resume_file)).read_text(encoding="utf-8").strip()
+
+    if not resume_text:
+        return {
+            "success": False,
+            "message": "resume_text or resume_file is required",
+        }
+
+    try:
+        results = session.handler.apply_resume_text(resume_text)
+    except Exception as exc:
+        return {
+            "success": False,
+            "message": f"Failed to apply resume text: {exc}",
+        }
+
+    if arguments.get("trigger_analysis", True):
+        session.handler.trigger_analysis()
+
+    score = session.handler.get_score()
+    return {
+        "success": any(results.values()),
+        "sections_applied": results,
+        "score": score,
+        "message": "Resume text applied to editor",
+    }
+
 def _handle_end_browser_session(arguments: Dict[str, Any]) -> Dict[str, Any]:
     session_id = arguments["session_id"]
     if not end_session(session_id):
@@ -402,6 +436,7 @@ TOOL_HANDLERS = {
     "build_improvement_prompt": _handle_build_improvement_prompt,
     "apply_ai_fixes": _handle_apply_ai_fixes,
     "improve_resume_until_target": _handle_improve_resume_until_target,
+    "apply_resume_text": _handle_apply_resume_text,
     "end_browser_session": _handle_end_browser_session,
 }
 
@@ -556,6 +591,20 @@ async def list_tools() -> list[types.Tool]:
                     "max_fixes_per_round": {"type": "integer", "default": 5},
                     "wait_between_rounds_sec": {"type": "integer", "default": 8},
                     "job_description_text": {"type": "string"},
+                },
+                "required": ["session_id"],
+            },
+        ),
+        types.Tool(
+            name="apply_resume_text",
+            description="Apply externally generated resume text (e.g. from an LLM) to the ResumeUp editor.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "resume_text": {"type": "string"},
+                    "resume_file": {"type": "string", "description": "Path to resume_updated.txt"},
+                    "trigger_analysis": {"type": "boolean", "default": True},
                 },
                 "required": ["session_id"],
             },

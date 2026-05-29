@@ -335,3 +335,108 @@ class ResumeUpHandler:
         except Exception as exc:
             logger.error("Error downloading resume: %s", exc)
             return None
+
+    def navigate_to_editor_tab(self) -> bool:
+        """Switch to the Editor tab in the resume builder."""
+        dismiss_editing_conflict(self.page)
+        editor_tab = self.page.locator(
+            "button:visible:not([disabled]), a:visible",
+            has_text=re.compile(r"^Editor$", re.I),
+        )
+        if editor_tab.count() == 0:
+            return False
+        editor_tab.first.click(timeout=self.timeout * 1000)
+        self.page.wait_for_timeout(1500)
+        return True
+
+    def _expand_section(self, section_name: str) -> None:
+        header = self.page.locator(
+            "button:visible, div:visible",
+            has_text=re.compile(rf"^{re.escape(section_name)}$", re.I),
+        )
+        if header.count():
+            try:
+                header.first.click(timeout=5000)
+                self.page.wait_for_timeout(800)
+            except Exception:
+                pass
+
+    def _fill_input_by_label(self, label_pattern: str, value: str) -> bool:
+        label = self.page.locator("label:visible", has_text=re.compile(label_pattern, re.I))
+        if label.count() == 0:
+            return False
+
+        field_id = label.first.get_attribute("for")
+        if field_id:
+            field = self.page.locator(f"#{field_id}")
+            if field.count():
+                field.fill(value)
+                return True
+
+        container = label.first.locator("xpath=ancestor::*[self::div or self::section][1]")
+        inputs = container.locator("textarea:visible, input:visible:not([type='file'])")
+        if inputs.count():
+            inputs.first.click()
+            inputs.first.fill(value)
+            return True
+        return False
+
+    def _fill_section_textareas(self, content: str) -> int:
+        """Fill visible textareas in the currently expanded section."""
+        updated = 0
+        textareas = self.page.locator("textarea:visible")
+        if textareas.count() == 1:
+            textareas.first.click()
+            textareas.first.fill(content)
+            return 1
+
+        lines = [line.strip() for line in content.splitlines() if line.strip()]
+        for idx, line in enumerate(lines):
+            if idx >= textareas.count():
+                break
+            area = textareas.nth(idx)
+            area.click()
+            area.fill(line)
+            updated += 1
+        return updated
+
+    def apply_resume_sections(self, sections: dict[str, str]) -> dict[str, bool]:
+        """Apply parsed resume sections to the ResumeUp editor."""
+        from resume_sections import parse_resume_sections
+
+        if not self.navigate_to_editor_tab():
+            raise RuntimeError("Could not open Editor tab")
+
+        results: dict[str, bool] = {}
+
+        if "Summary" in sections:
+            self._expand_section("Summary")
+            applied = self._fill_section_textareas(sections["Summary"])
+            if not applied:
+                applied = int(self._fill_input_by_label("headline|summary", sections["Summary"]))
+            results["Summary"] = bool(applied)
+
+        if "Skills" in sections:
+            self._expand_section("Skills")
+            results["Skills"] = bool(self._fill_section_textareas(sections["Skills"]))
+
+        if "Work Experience" in sections:
+            self._expand_section("Work Experience")
+            results["Work Experience"] = bool(self._fill_section_textareas(sections["Work Experience"]))
+
+        if "Education" in sections:
+            self._expand_section("Education")
+            results["Education"] = bool(self._fill_section_textareas(sections["Education"]))
+
+        self.page.wait_for_timeout(1000)
+        return results
+
+    def apply_resume_text(self, resume_text: str) -> dict[str, bool]:
+        """Parse and apply updated resume text to the editor."""
+        from resume_sections import parse_resume_sections
+
+        sections = parse_resume_sections(resume_text)
+        if not sections:
+            raise ValueError("No resume sections found in provided text")
+        return self.apply_resume_sections(sections)
+
