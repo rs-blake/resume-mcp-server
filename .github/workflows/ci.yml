@@ -27,4 +27,4 @@ jobs:
 
       - name: Verify module imports
         run: |
-          python -c "import mcp_server, resumeup_tailor, resumeup_workflow, application_orchestrator, linkedin_job_search, application_store, job_matcher"
+          python -c "import mcp_server, resumeup_tailor, resumeup_workflow, application_orchestrator, linkedin_job_search, application_store, job_matcher, application_profile, screening_question_handler, run_pipeline"

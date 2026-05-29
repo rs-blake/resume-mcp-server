@@ -8,7 +8,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from application_profile import load_application_profile, profile_as_flat_strings
 from linkedin_processor import LinkedInProcessor
+from screening_question_handler import answer_screening_questions_on_page
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +49,12 @@ def _upload_resume_if_needed(page, resume_path: Path) -> bool:
         return False
 
 
-def _answer_simple_questions(page, profile: Dict[str, str]) -> int:
+def _answer_simple_questions(page, profile: Dict[str, Any]) -> int:
     """Fill common screening fields using profile defaults."""
+    flat = profile_as_flat_strings(profile)
     answered = 0
 
-    for key, value in profile.items():
+    for key, value in flat.items():
         if not value:
             continue
 
@@ -70,13 +73,15 @@ def _answer_simple_questions(page, profile: Dict[str, str]) -> int:
 
     # Common radio/select patterns
     for pattern, answer in [
-        (r"authorized to work", profile.get("work_authorization", "Yes")),
-        (r"sponsorship", profile.get("requires_sponsorship", "No")),
-        (r"years of work experience", profile.get("years_experience", "")),
+        (r"authorized to work", flat.get("work_authorization", "Yes")),
+        (r"sponsorship", flat.get("requires_sponsorship", "No")),
+        (r"years of work experience", flat.get("years_experience", "")),
+        (r"salary", flat.get("salary_expectation", "")),
+        (r"relocate", flat.get("willing_to_relocate", "")),
     ]:
         if not answer:
             continue
-        option = page.get_by_role("radio", name=re.compile(answer, re.I))
+        option = page.get_by_role("radio", name=re.compile(re.escape(str(answer)), re.I))
         if option.count() > 0:
             try:
                 option.first.click(timeout=2000)
@@ -98,12 +103,15 @@ def _count_custom_questions(page) -> int:
 def _advance_steps(
     page,
     resume_path: Optional[Path],
-    profile: Dict[str, str],
+    profile: Dict[str, Any],
+    job_title: str = "",
+    use_llm: bool = True,
     max_steps: int = 10,
 ) -> Dict[str, Any]:
     """Walk through Easy Apply wizard steps."""
     steps_completed = 0
     questions_seen = 0
+    screening_answered = 0
 
     for _ in range(max_steps):
         questions_seen = max(questions_seen, _count_custom_questions(page))
@@ -112,6 +120,12 @@ def _advance_steps(
             _upload_resume_if_needed(page, resume_path)
 
         _answer_simple_questions(page, profile)
+        screening_answered += answer_screening_questions_on_page(
+            page,
+            profile=profile,
+            job_title=job_title,
+            use_llm=use_llm,
+        )
 
         submit = page.get_by_role("button", name=SUBMIT_BUTTON)
         if submit.count() > 0:
@@ -119,6 +133,7 @@ def _advance_steps(
                 "ready_to_submit": True,
                 "steps_completed": steps_completed,
                 "custom_questions": questions_seen,
+                "screening_answered": screening_answered,
             }
 
         next_button = page.get_by_role("button", name=NEXT_BUTTON)
@@ -139,6 +154,7 @@ def _advance_steps(
         "ready_to_submit": False,
         "steps_completed": steps_completed,
         "custom_questions": questions_seen,
+        "screening_answered": screening_answered,
     }
 
 
@@ -157,15 +173,17 @@ def run_easy_apply(
     processor: LinkedInProcessor,
     job_url: str,
     resume_path: Optional[str] = None,
-    profile: Optional[Dict[str, str]] = None,
+    profile: Optional[Dict[str, Any]] = None,
+    job_title: str = "",
     require_approval: bool = True,
     max_custom_questions: int = 3,
+    use_llm: bool = True,
     submit: bool = False,
 ) -> Dict[str, Any]:
     """Open Easy Apply for a job and optionally submit the application."""
     assert processor.page is not None
     page = processor.page
-    profile = profile or {}
+    profile = profile or load_application_profile()
 
     page.goto(job_url.split("?")[0], timeout=processor.timeout * 1000)
     page.wait_for_load_state("domcontentloaded")
@@ -186,7 +204,13 @@ def run_easy_apply(
             "submitted": False,
         }
 
-    progress = _advance_steps(page, resume, profile)
+    progress = _advance_steps(
+        page,
+        resume,
+        profile,
+        job_title=job_title,
+        use_llm=use_llm,
+    )
     custom_questions = progress["custom_questions"]
 
     if custom_questions > max_custom_questions:

@@ -29,6 +29,13 @@ LINKEDIN_FILTER_EASY_APPLY = "f_AL"
 LINKEDIN_FILTER_REMOTE = "f_WT"
 LINKEDIN_REMOTE_VALUE = "2"
 
+# Pipeline tuning defaults (override via env)
+DEFAULT_MIN_MATCH_SCORE = float(os.getenv("DEFAULT_MIN_MATCH_SCORE", "0.35"))
+DEFAULT_SEARCH_LIMIT = int(os.getenv("DEFAULT_SEARCH_LIMIT", "5"))
+DAILY_TAILOR_CAP = int(os.getenv("DAILY_TAILOR_CAP", "10"))
+DEFAULT_MAX_CUSTOM_QUESTIONS = int(os.getenv("MAX_CUSTOM_QUESTIONS", "5"))
+USE_LLM_SCREENING = os.getenv("USE_LLM_SCREENING", "true").lower() in {"1", "true", "yes"}
+
 BUTTON_PATTERNS = {
     "resume_upload": [
         r"upload resume",

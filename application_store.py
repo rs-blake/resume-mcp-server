@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import os
+import re
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -88,6 +91,108 @@ def _to_dict(application: JobApplication) -> Dict[str, Any]:
         "created_at": application.created_at,
         "updated_at": application.updated_at,
     }
+
+
+def _normalize_key(value: str) -> str:
+    return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def count_applications_since(
+    since_timestamp: float,
+    statuses: Optional[List[str]] = None,
+    store_path: Optional[Path] = None,
+) -> int:
+    """Count applications created or updated since a timestamp."""
+    records = _load_raw(store_path)
+    count = 0
+    for record in records:
+        status = record.get("status", "")
+        if statuses and status not in statuses:
+            continue
+        updated_at = float(record.get("updated_at", record.get("created_at", 0)))
+        created_at = float(record.get("created_at", 0))
+        if max(updated_at, created_at) >= since_timestamp:
+            count += 1
+    return count
+
+
+def count_tailored_today(store_path: Optional[Path] = None) -> int:
+    """Count applications tailored or applied today (UTC)."""
+    now = datetime.now(timezone.utc)
+    start_of_day = datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp()
+    return count_applications_since(
+        start_of_day,
+        statuses=["tailored", "tailoring", "approved", "applied"],
+        store_path=store_path,
+    )
+
+
+def has_duplicate_company_title(
+    company: str,
+    title: str,
+    store_path: Optional[Path] = None,
+) -> bool:
+    """Return True if the same company+title was already queued (non-skipped)."""
+    company_key = _normalize_key(company)
+    title_key = _normalize_key(title)
+    if not company_key or not title_key:
+        return False
+
+    for application in list_applications(store_path=store_path):
+        if application.status == "skipped":
+            continue
+        if (
+            _normalize_key(application.company) == company_key
+            and _normalize_key(application.title) == title_key
+        ):
+            return True
+    return False
+
+
+def export_applications_csv(
+    output_path: Optional[str] = None,
+    status: Optional[str] = None,
+    store_path: Optional[Path] = None,
+) -> Path:
+    """Export application queue to CSV for review."""
+    applications = list_applications(status=status, store_path=store_path)
+    path = Path(os.path.expanduser(output_path or "applications_queue.csv"))
+
+    fieldnames = [
+        "application_id",
+        "status",
+        "title",
+        "company",
+        "location",
+        "match_score",
+        "resume_score",
+        "job_url",
+        "pdf_path",
+        "updated_at",
+        "error_message",
+    ]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for application in applications:
+            writer.writerow(
+                {
+                    "application_id": application.application_id,
+                    "status": application.status,
+                    "title": application.title,
+                    "company": application.company,
+                    "location": application.location,
+                    "match_score": application.match_score,
+                    "resume_score": application.resume_score,
+                    "job_url": application.job_url,
+                    "pdf_path": application.pdf_path or "",
+                    "updated_at": datetime.fromtimestamp(
+                        application.updated_at, tz=timezone.utc
+                    ).isoformat(),
+                    "error_message": application.error_message or "",
+                }
+            )
+    return path
 
 
 def list_applications(

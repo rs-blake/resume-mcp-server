@@ -1,5 +1,41 @@
 {
+  "contact": {
+    "email": "your-email@example.com",
+    "phone": "+1-555-0100",
+    "city": "San Francisco, CA",
+    "linkedin_url": "https://www.linkedin.com/in/your-profile"
+  },
   "work_authorization": "Yes",
   "requires_sponsorship": "No",
-  "years_experience": "5"
+  "years_experience": "5",
+  "salary_expectation": "150000",
+  "salary_currency": "USD",
+  "notice_period_days": "14",
+  "willing_to_relocate": "Yes",
+  "has_security_clearance": "No",
+  "portfolio_url": "",
+  "github_url": "",
+  "screening_answers": {
+    "authorized to work in the united states": "Yes",
+    "legally authorized to work": "Yes",
+    "require sponsorship": "No",
+    "require visa sponsorship": "No",
+    "years of experience": "5",
+    "years of relevant experience": "5",
+    "expected salary": "150000",
+    "salary expectation": "150000",
+    "desired salary": "150000",
+    "willing to relocate": "Yes",
+    "comfortable commuting": "Yes",
+    "security clearance": "No",
+    "background check": "Yes",
+    "drug test": "Yes",
+    "start date": "2 weeks",
+    "notice period": "2 weeks"
+  },
+  "default_text_answers": {
+    "why are you interested": "I'm excited about this role because it aligns with my experience and the impact I can deliver for your team.",
+    "why do you want to work here": "Your mission and engineering culture are a strong match for how I like to build products.",
+    "additional information": "Happy to discuss my background and relevant projects in more detail during an interview."
+  }
 }

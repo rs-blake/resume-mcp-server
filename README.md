@@ -501,6 +501,31 @@ APPLICATIONS_OUTPUT_DIR=~/applications
 
 On first run, a browser window opens for LinkedIn login. Sessions persist in `~/.linkedin_automation/`.
 
+### Quick start CLI
+
+```bash
+cp .env.example .env   # fill in credentials and PROFILE_SKILLS
+python run_pipeline.py doctor
+python run_pipeline.py search "security architect" --location Remote --resume /path/to/resume.pdf --limit 1
+python run_pipeline.py queue --status tailored
+python run_pipeline.py export --output review.csv
+python run_pipeline.py approve <application_id>
+python run_pipeline.py apply <application_id>          # pre-fill only
+python run_pipeline.py apply <application_id> --submit # submit after review
+```
+
+### Tuning defaults (`.env`)
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DEFAULT_MIN_MATCH_SCORE` | `0.35` | Skip jobs below skill overlap |
+| `DEFAULT_SEARCH_LIMIT` | `5` | Jobs per search run |
+| `DAILY_TAILOR_CAP` | `10` | Max tailor operations per day |
+| `MAX_CUSTOM_QUESTIONS` | `5` | Skip complex Easy Apply forms |
+| `USE_LLM_SCREENING` | `true` | LLM fallback for screening Q&A |
+
+Edit `examples/application_profile.json` for salary, sponsorship, and common screening answers. Set `OPENAI_API_KEY` for unmatched questions.
+
 ### End-to-end workflow
 
 ```
@@ -541,6 +566,8 @@ Application records are stored in `~/.resumeup_automation/applications.json`.
 | `get_application_history` | List applications by status |
 | `approve_application` | Mark application ready for Easy Apply |
 | `linkedin_easy_apply` | Pre-fill or submit Easy Apply for a queued job |
+| `export_applications_csv` | Export review queue to CSV |
+| `check_pipeline_setup` | Validate env, profile, and defaults |
 
 ### Application statuses
 

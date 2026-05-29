@@ -17,10 +17,13 @@ from mcp.server.stdio import stdio_server
 
 from job_parser import parse_job_description
 from application_orchestrator import (
+    check_pipeline_setup,
+    export_queue_csv,
     get_application_history,
     run_apply_from_queue,
     run_search_and_tailor,
 )
+from constants import DEFAULT_MIN_MATCH_SCORE, DEFAULT_SEARCH_LIMIT
 from application_store import update_application_status
 from linkedin_job_scraper import get_job_details
 from linkedin_job_search import search_jobs
@@ -460,13 +463,16 @@ def _handle_search_and_tailor(arguments: Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(profile_skills, str):
         profile_skills = [skill.strip() for skill in profile_skills.split(",") if skill.strip()]
 
+    limit_arg = arguments.get("limit")
+    min_score_arg = arguments.get("min_match_score")
+
     return run_search_and_tailor(
         keywords=keywords,
         location=arguments.get("location", ""),
         easy_apply_only=bool(arguments.get("easy_apply_only", True)),
         remote_only=bool(arguments.get("remote_only", False)),
-        limit=int(arguments.get("limit", 5)),
-        min_match_score=float(arguments.get("min_match_score", 0.0)),
+        limit=int(limit_arg) if limit_arg is not None else None,
+        min_match_score=float(min_score_arg) if min_score_arg is not None else None,
         profile_skills=profile_skills,
         output_dir=arguments.get("output_dir"),
         resume_session_id=arguments.get("session_id"),
@@ -475,6 +481,8 @@ def _handle_search_and_tailor(arguments: Dict[str, Any]) -> Dict[str, Any]:
         resume_name=arguments.get("resume_name"),
         target_score=int(arguments.get("target_score", 95)),
         max_attempts=int(arguments.get("max_attempts", 8)),
+        daily_cap=int(arguments["daily_cap"]) if arguments.get("daily_cap") is not None else None,
+        dedupe_company_title=bool(arguments.get("dedupe_company_title", True)),
         linkedin_email=arguments.get("linkedin_email"),
         linkedin_password=arguments.get("linkedin_password"),
         headless=arguments.get("headless"),
@@ -510,16 +518,29 @@ def _handle_linkedin_easy_apply(arguments: Dict[str, Any]) -> Dict[str, Any]:
     if not application_id:
         return {"success": False, "message": "application_id is required"}
 
+    max_q = arguments.get("max_custom_questions")
     return run_apply_from_queue(
         application_id=application_id,
         require_approval=bool(arguments.get("require_approval", True)),
         submit=bool(arguments.get("submit", False)),
-        max_custom_questions=int(arguments.get("max_custom_questions", 3)),
+        max_custom_questions=int(max_q) if max_q is not None else None,
+        use_llm=arguments.get("use_llm"),
         linkedin_email=arguments.get("linkedin_email"),
         linkedin_password=arguments.get("linkedin_password"),
         headless=arguments.get("headless"),
         close_linkedin_session=bool(arguments.get("close_linkedin_session", True)),
     )
+
+
+def _handle_export_applications_csv(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return export_queue_csv(
+        output_path=arguments.get("output_path"),
+        status=arguments.get("status"),
+    )
+
+
+def _handle_check_pipeline_setup(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return check_pipeline_setup()
 
 
 TOOL_HANDLERS = {
@@ -542,6 +563,8 @@ TOOL_HANDLERS = {
     "get_application_history": _handle_get_application_history,
     "approve_application": _handle_approve_application,
     "linkedin_easy_apply": _handle_linkedin_easy_apply,
+    "export_applications_csv": _handle_export_applications_csv,
+    "check_pipeline_setup": _handle_check_pipeline_setup,
 }
 
 
@@ -758,8 +781,10 @@ async def list_tools() -> list[types.Tool]:
                     "location": {"type": "string"},
                     "easy_apply_only": {"type": "boolean", "default": True},
                     "remote_only": {"type": "boolean", "default": False},
-                    "limit": {"type": "integer", "default": 5},
-                    "min_match_score": {"type": "number", "default": 0.0},
+                    "limit": {"type": "integer", "default": DEFAULT_SEARCH_LIMIT},
+                    "min_match_score": {"type": "number", "default": DEFAULT_MIN_MATCH_SCORE},
+                    "daily_cap": {"type": "integer", "description": "Max jobs to tailor per day"},
+                    "dedupe_company_title": {"type": "boolean", "default": True},
                     "profile_skills": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -811,7 +836,8 @@ async def list_tools() -> list[types.Tool]:
                     "application_id": {"type": "string"},
                     "require_approval": {"type": "boolean", "default": True},
                     "submit": {"type": "boolean", "default": False},
-                    "max_custom_questions": {"type": "integer", "default": 3},
+                    "max_custom_questions": {"type": "integer", "default": 5},
+                    "use_llm": {"type": "boolean", "description": "Use LLM for unmatched screening questions"},
                     "linkedin_email": {"type": "string"},
                     "linkedin_password": {"type": "string"},
                     "headless": {"type": "boolean"},
@@ -819,6 +845,22 @@ async def list_tools() -> list[types.Tool]:
                 },
                 "required": ["application_id"],
             },
+        ),
+        types.Tool(
+            name="export_applications_csv",
+            description="Export the application review queue to CSV.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "output_path": {"type": "string"},
+                    "status": {"type": "string"},
+                },
+            },
+        ),
+        types.Tool(
+            name="check_pipeline_setup",
+            description="Validate env, profile, and tuning defaults before running the pipeline.",
+            inputSchema={"type": "object", "properties": {}},
         ),
     ]
 
