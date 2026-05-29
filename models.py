@@ -71,6 +71,94 @@ class ResumeFeedback:
 
 
 @dataclass
+class JobListing:
+    """Summary of a job from LinkedIn search results."""
+
+    job_id: str
+    title: str
+    company: str
+    location: str
+    url: str
+    easy_apply: bool
+    posted_time: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "title": self.title,
+            "company": self.company,
+            "location": self.location,
+            "url": self.url,
+            "easy_apply": self.easy_apply,
+            "posted_time": self.posted_time,
+        }
+
+
+@dataclass
+class JobDetails:
+    """Full job posting details scraped from LinkedIn."""
+
+    job_id: str
+    title: str
+    company: str
+    location: str
+    url: str
+    description: str
+    easy_apply: bool
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "job_id": self.job_id,
+            "title": self.title,
+            "company": self.company,
+            "location": self.location,
+            "url": self.url,
+            "description": self.description,
+            "easy_apply": self.easy_apply,
+        }
+
+
+@dataclass
+class JobApplication:
+    """Tracked job in the review / application queue."""
+
+    application_id: str
+    job_id: str
+    job_url: str
+    title: str
+    company: str
+    location: str
+    status: str
+    easy_apply: bool = False
+    match_score: Optional[float] = None
+    resume_score: Optional[int] = None
+    pdf_path: Optional[str] = None
+    job_description_path: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "application_id": self.application_id,
+            "job_id": self.job_id,
+            "job_url": self.job_url,
+            "title": self.title,
+            "company": self.company,
+            "location": self.location,
+            "status": self.status,
+            "easy_apply": self.easy_apply,
+            "match_score": self.match_score,
+            "resume_score": self.resume_score,
+            "pdf_path": self.pdf_path,
+            "job_description_path": self.job_description_path,
+            "error_message": self.error_message,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+
+
+@dataclass
 class BrowserSession:
     """Active Playwright browser session state."""
 

@@ -13,6 +13,22 @@ VIEWPORT_WIDTH = 1280
 VIEWPORT_HEIGHT = 900
 SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 
+# LinkedIn automation
+LINKEDIN_LOGIN_URL = "https://www.linkedin.com/login"
+LINKEDIN_JOBS_URL = "https://www.linkedin.com/jobs/"
+LINKEDIN_SESSION_DIR = Path(
+    os.path.expanduser(os.getenv("LINKEDIN_SESSION_DIR", "~/.linkedin_automation"))
+)
+LINKEDIN_DEFAULT_TIMEOUT = int(os.getenv("LINKEDIN_TIMEOUT", "120"))
+APPLICATIONS_OUTPUT_DIR = Path(
+    os.path.expanduser(os.getenv("APPLICATIONS_OUTPUT_DIR", "~/applications"))
+)
+
+# LinkedIn job search filter codes (f_* query params)
+LINKEDIN_FILTER_EASY_APPLY = "f_AL"
+LINKEDIN_FILTER_REMOTE = "f_WT"
+LINKEDIN_REMOTE_VALUE = "2"
+
 BUTTON_PATTERNS = {
     "resume_upload": [
         r"upload resume",

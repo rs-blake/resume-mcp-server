@@ -14,6 +14,10 @@ This project converts a Playwright-based browser automation script into a compos
 ✅ **Job Parsing**: Intelligent extraction of skills, requirements, and company info  
 ✅ **Score Polling**: Automated re-analysis loops until target score reached  
 ✅ **PDF Download**: Automatic tailored resume extraction and download  
+✅ **LinkedIn Job Search**: Search Easy Apply jobs and scrape posting details  
+✅ **Search & Tailor Pipeline**: Auto-tailor resumes for matching LinkedIn jobs  
+✅ **Application Review Queue**: Track tailored jobs before Easy Apply submission  
+✅ **Easy Apply Assist Mode**: Pre-fill applications with tailored PDFs (manual submit by default)  
 ✅ **LLM Integration**: Ready for Copilot, Claude, or other MCP-compatible LLMs  
 
 ---
@@ -480,6 +484,84 @@ curl -X POST http://localhost:8000/call \
 
 ---
 
+## LinkedIn Job Search & Apply Workflow
+
+This server can search LinkedIn jobs, tailor your resume for each match via ResumeUp, and queue applications for Easy Apply.
+
+### Setup
+
+Add LinkedIn settings to `.env` (manual login is supported if credentials are omitted):
+
+```bash
+LINKEDIN_EMAIL=your-email@example.com
+LINKEDIN_PASSWORD=your-password
+PROFILE_SKILLS=AWS,Python,Kubernetes,Security
+APPLICATIONS_OUTPUT_DIR=~/applications
+```
+
+On first run, a browser window opens for LinkedIn login. Sessions persist in `~/.linkedin_automation/`.
+
+### End-to-end workflow
+
+```
+1. search_and_tailor       → Find Easy Apply jobs, tailor resumes, save to review queue
+2. get_application_history → Review tailored jobs (status: tailored)
+3. approve_application     → Mark jobs you want to apply to
+4. linkedin_easy_apply     → Pre-fill Easy Apply (submit=false by default)
+5. linkedin_easy_apply     → Submit after review (submit=true, require_approval=false)
+```
+
+### Example: search and tailor
+
+```json
+{
+  "keywords": "security architect",
+  "location": "Remote",
+  "easy_apply_only": true,
+  "limit": 5,
+  "min_match_score": 0.3,
+  "file_path": "/path/to/base-resume.pdf",
+  "target_score": 95
+}
+```
+
+Each tailored job is saved under `~/applications/<job_id>-<company>/` with:
+- `job_description.txt`
+- Tailored resume PDF
+
+Application records are stored in `~/.resumeup_automation/applications.json`.
+
+### LinkedIn MCP tools
+
+| Tool | Description |
+|------|-------------|
+| `linkedin_search_jobs` | Search LinkedIn and return job listings |
+| `linkedin_get_job_details` | Scrape full job description from a URL |
+| `search_and_tailor` | Search → match → tailor → queue (main pipeline) |
+| `get_application_history` | List applications by status |
+| `approve_application` | Mark application ready for Easy Apply |
+| `linkedin_easy_apply` | Pre-fill or submit Easy Apply for a queued job |
+
+### Application statuses
+
+| Status | Meaning |
+|--------|---------|
+| `discovered` | Job found, not yet processed |
+| `tailoring` | ResumeUp tailoring in progress |
+| `tailored` | PDF ready — review recommended |
+| `approved` | Ready for Easy Apply |
+| `applied` | Submitted on LinkedIn |
+| `skipped` | Low match score or duplicate |
+| `failed` | Scrape or tailoring error |
+
+### Important notes
+
+- **LinkedIn ToS**: Automated scraping and applying may violate LinkedIn's terms. Use assist mode and rate-limit applications.
+- **Easy Apply varies**: Jobs with many custom screening questions are skipped by default (`max_custom_questions=3`).
+- **Manual submit default**: `linkedin_easy_apply` pre-fills forms but does not submit unless `submit=true`.
+
+---
+
 ## Error Handling
 
 All tool responses include:
@@ -541,4 +623,4 @@ For issues, questions, or feedback:
 ---
 
 **Last Updated**: 2026-05-29  
-**Version**: 1.0.0
+**Version**: 1.1.0
