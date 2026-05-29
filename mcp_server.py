@@ -17,7 +17,7 @@ from mcp.server.stdio import stdio_server
 
 from job_parser import parse_job_description
 from resume_processor import ResumeProcessor
-from generate_resume import build_improvement_prompt, improve_resume_until_target, load_feedback_from_file
+from resumeup_workflow import run_tailor_and_download
 from session_manager import create_session, end_session, get_session
 
 load_dotenv()
@@ -290,52 +290,13 @@ def _handle_download_tailored_resume(arguments: Dict[str, Any]) -> Dict[str, Any
 
 def _handle_get_resume_feedback(arguments: Dict[str, Any]) -> Dict[str, Any]:
     session = _require_session(arguments["session_id"])
-    feedback_path = arguments.get("feedback_file")
-
-    if feedback_path:
-        feedback = load_feedback_from_file(feedback_path)
-    else:
-        feedback = session.handler.get_report_feedback()
-
+    feedback = session.handler.get_report_feedback()
     return {
         "success": True,
         "feedback": feedback.to_dict(),
         "message": f"Found {len(feedback.issues)} issue(s)",
     }
 
-
-def _handle_build_improvement_prompt(arguments: Dict[str, Any]) -> Dict[str, Any]:
-    session = _require_session(arguments["session_id"])
-    job_text = (
-        arguments.get("job_description_text")
-        or session.job_description_text
-        or ""
-    ).strip()
-    if not job_text:
-        return {
-            "success": False,
-            "message": "job_description_text is required (argument or prior upload)",
-        }
-
-    if arguments.get("feedback_file"):
-        feedback = load_feedback_from_file(arguments["feedback_file"])
-    else:
-        feedback = session.handler.get_report_feedback()
-
-    resume_text = arguments.get("resume_text") or session.handler.get_editor_resume_text()
-    prompt = build_improvement_prompt(
-        resume_text=resume_text,
-        job_description=job_text,
-        feedback=feedback,
-        instructions_path=arguments.get("prompt_instructions_file"),
-    )
-
-    return {
-        "success": True,
-        "prompt": prompt,
-        "feedback": feedback.to_dict(),
-        "message": "Improvement prompt generated",
-    }
 
 
 def _handle_apply_ai_fixes(arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -364,50 +325,46 @@ def _handle_apply_ai_fixes(arguments: Dict[str, Any]) -> Dict[str, Any]:
 
 def _handle_improve_resume_until_target(arguments: Dict[str, Any]) -> Dict[str, Any]:
     session = _require_session(arguments["session_id"])
-    result = improve_resume_until_target(
-        session.handler,
-        target_score=int(arguments.get("target_score", 95)),
-        max_rounds=int(arguments.get("max_rounds", 5)),
-        max_fixes_per_round=int(arguments.get("max_fixes_per_round", 5)),
-        wait_between_rounds_sec=int(arguments.get("wait_between_rounds_sec", 8)),
-        job_description=arguments.get("job_description_text") or session.job_description_text,
+    target_score = int(arguments.get("target_score", 95))
+    max_attempts = int(arguments.get("max_rounds", arguments.get("max_attempts", 8)))
+    wait_between = int(arguments.get("wait_between_rounds_sec", 8))
+
+    final_score, attempts = session.handler.improve_until_target(
+        target_score=target_score,
+        max_attempts=max_attempts,
+        wait_between_attempts=wait_between,
     )
-    result["success"] = bool(result.get("success"))
-    return result
 
-
-def _handle_apply_resume_text(arguments: Dict[str, Any]) -> Dict[str, Any]:
-    session = _require_session(arguments["session_id"])
-    resume_text = (arguments.get("resume_text") or "").strip()
-    resume_file = arguments.get("resume_file")
-
-    if resume_file:
-        resume_text = Path(os.path.expanduser(resume_file)).read_text(encoding="utf-8").strip()
-
-    if not resume_text:
-        return {
-            "success": False,
-            "message": "resume_text or resume_file is required",
-        }
-
-    try:
-        results = session.handler.apply_resume_text(resume_text)
-    except Exception as exc:
-        return {
-            "success": False,
-            "message": f"Failed to apply resume text: {exc}",
-        }
-
-    if arguments.get("trigger_analysis", True):
-        session.handler.trigger_analysis()
-
-    score = session.handler.get_score()
     return {
-        "success": any(results.values()),
-        "sections_applied": results,
-        "score": score,
-        "message": "Resume text applied to editor",
+        "success": final_score is not None,
+        "target_reached": bool(final_score is not None and final_score >= target_score),
+        "final_score": final_score,
+        "attempts_used": attempts,
+        "message": f"Improvement complete. Final score: {final_score}",
     }
+
+
+
+
+def _handle_tailor_and_download(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    job_text = (arguments.get("job_description_text") or "").strip()
+    if not job_text and arguments.get("job_desc_file"):
+        job_text = Path(os.path.expanduser(arguments["job_desc_file"])).read_text(encoding="utf-8").strip()
+
+    return run_tailor_and_download(
+        job_description_text=job_text,
+        session_id=arguments.get("session_id"),
+        email=arguments.get("email"),
+        password=arguments.get("password"),
+        headless=arguments.get("headless"),
+        file_path=arguments.get("file_path"),
+        resume_id=arguments.get("resume_id"),
+        resume_name=arguments.get("resume_name"),
+        target_score=int(arguments.get("target_score", 95)),
+        max_attempts=int(arguments.get("max_attempts", 8)),
+        output_dir=arguments.get("output_dir", "."),
+        close_session=bool(arguments.get("close_session", False)),
+    )
 
 def _handle_end_browser_session(arguments: Dict[str, Any]) -> Dict[str, Any]:
     session_id = arguments["session_id"]
@@ -433,10 +390,9 @@ TOOL_HANDLERS = {
     "poll_score_until_target": _handle_poll_score_until_target,
     "download_tailored_resume": _handle_download_tailored_resume,
     "get_resume_feedback": _handle_get_resume_feedback,
-    "build_improvement_prompt": _handle_build_improvement_prompt,
     "apply_ai_fixes": _handle_apply_ai_fixes,
     "improve_resume_until_target": _handle_improve_resume_until_target,
-    "apply_resume_text": _handle_apply_resume_text,
+    "tailor_and_download": _handle_tailor_and_download,
     "end_browser_session": _handle_end_browser_session,
 }
 
@@ -541,32 +497,16 @@ async def list_tools() -> list[types.Tool]:
         ),
         types.Tool(
             name="get_resume_feedback",
-            description="Get structured resume feedback from the Report tab or a feedback file.",
+            description="Get structured resume feedback from the ResumeUp Report tab.",
             inputSchema={
                 "type": "object",
                 "properties": {
                     "session_id": {"type": "string"},
-                    "feedback_file": {"type": "string", "description": "Optional resumefeedback.txt path"},
                 },
                 "required": ["session_id"],
             },
         ),
-        types.Tool(
-            name="build_improvement_prompt",
-            description="Build an LLM prompt to rewrite the resume using feedback and job description.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string"},
-                    "job_description_text": {"type": "string"},
-                    "feedback_file": {"type": "string"},
-                    "resume_text": {"type": "string"},
-                    "prompt_instructions_file": {"type": "string"},
-                },
-                "required": ["session_id"],
-            },
-        ),
-        types.Tool(
+types.Tool(
             name="apply_ai_fixes",
             description="Click ResumeUp Fix with AI buttons on the Report tab.",
             inputSchema={
@@ -595,21 +535,7 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["session_id"],
             },
         ),
-        types.Tool(
-            name="apply_resume_text",
-            description="Apply externally generated resume text (e.g. from an LLM) to the ResumeUp editor.",
-            inputSchema={
-                "type": "object",
-                "properties": {
-                    "session_id": {"type": "string"},
-                    "resume_text": {"type": "string"},
-                    "resume_file": {"type": "string", "description": "Path to resume_updated.txt"},
-                    "trigger_analysis": {"type": "boolean", "default": True},
-                },
-                "required": ["session_id"],
-            },
-        ),
-        types.Tool(
+types.Tool(
             name="end_browser_session",
             description="Close a browser session and release resources.",
             inputSchema={

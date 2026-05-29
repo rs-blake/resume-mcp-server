@@ -27,5 +27,4 @@ jobs:
 
       - name: Verify module imports
         run: |
-          python -c "import mcp_server, resumeup_tailor, generate_resume"
-          python generate_resume.py parse-resume --resume-file examples/resume_updated.txt
+          python -c "import mcp_server, resumeup_tailor, resumeup_workflow"
