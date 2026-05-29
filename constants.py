@@ -9,17 +9,28 @@ DEFAULT_TIMEOUT = int(os.getenv("MCP_TIMEOUT", "120"))
 SESSION_DIR = Path(
     os.path.expanduser(os.getenv("RESUMEUP_SESSION_DIR", "~/.resumeup_automation"))
 )
-VIEWPORT_WIDTH = 1366
-VIEWPORT_HEIGHT = 768
+VIEWPORT_WIDTH = 1280
+VIEWPORT_HEIGHT = 900
 SESSION_MAX_AGE_SECONDS = 24 * 60 * 60
 
 BUTTON_PATTERNS = {
     "resume_upload": [
+        r"upload resume",
+        r"import resume",
+        r"add resume",
+        r"use existing resume",
+        r"resume upload",
         r"upload\s+resume",
-        r"import\s+resume",
         r"upload\s+from\s+computer",
-        r"choose\s+file",
-        r"browse",
+    ],
+    "job_upload": [
+        r"upload job description",
+        r"upload jd",
+        r"import job description",
+        r"add job description",
+        r"job description",
+        r"tailor to job",
+        r"target job",
     ],
     "tailor": [
         r"tailor\s+to\s+jd",
@@ -27,22 +38,49 @@ BUTTON_PATTERNS = {
         r"build\s+resume",
     ],
     "analyze": [
+        r"analyze",
+        r"score",
+        r"optimize",
+        r"review",
+        r"check score",
+        r"improve",
         r"re-?analyse",
         r"re-?analyze",
-        r"analyze",
-        r"check\s+score",
-        r"run\s+analysis",
-        r"update\s+score",
+    ],
+    "analyze_my_resume": [
+        r"analyze\.my\.resume",
+    ],
+    "ai_suggestion": [
+        r"fix\.with\.ai",
+        r"add\.with\.ai",
+        r"add\.all\.to\.skills",
     ],
     "continue_editing": [
-        r"continue\s+editing\s+here",
+        r"continue editing here",
         r"continue\s+editing",
     ],
 }
 
 SCORE_PATTERNS = [
+    r"(?:re-analy|resume.?score)[^\d]{0,60}(\d{2,3})",
+    r"score[^\d]{0,20}(\d{1,3})",
+    r"(\d{2,3})\s*/\s*100",
+    r"(\d{2,3})\s*pts",
+    r"(\d{2,3})\s*%",
     r"resume\s+score\s*:?\s*(\d{1,3})\s*%?",
-    r"(\d{1,3})\s*/\s*100",
-    r"(\d{1,3})\s*%\s*(?:match|score|fit)?",
-    r"(?:match|score|fit)\s*:?\s*(\d{1,3})\s*%?",
+]
+
+TEMPLATE_PATTERNS = [
+    r"ATS.Friendly",
+    r"ATS Friendly",
+    r"Craft",
+    r"Catalyst",
+    r"Luminary",
+    r"Standard",
+    r"Classic",
+    r"Elegant",
+    r"Use Template",
+    r"Use This",
+    r"Continue",
+    r"Next",
 ]

@@ -17,6 +17,7 @@ from mcp.server.stdio import stdio_server
 
 from job_parser import parse_job_description
 from resume_processor import ResumeProcessor
+from generate_resume import build_improvement_prompt, improve_resume_until_target, load_feedback_from_file
 from session_manager import create_session, end_session, get_session
 
 load_dotenv()
@@ -189,6 +190,8 @@ def _handle_upload_job_to_resumeup(arguments: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     resume_name = arguments.get("resume_name")
+    session.job_description_text = job_text
+
     if not session.handler.enter_job_description(job_text, resume_name=resume_name):
         return {
             "success": False,
@@ -284,6 +287,94 @@ def _handle_download_tailored_resume(arguments: Dict[str, Any]) -> Dict[str, Any
     }
 
 
+
+def _handle_get_resume_feedback(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    session = _require_session(arguments["session_id"])
+    feedback_path = arguments.get("feedback_file")
+
+    if feedback_path:
+        feedback = load_feedback_from_file(feedback_path)
+    else:
+        feedback = session.handler.get_report_feedback()
+
+    return {
+        "success": True,
+        "feedback": feedback.to_dict(),
+        "message": f"Found {len(feedback.issues)} issue(s)",
+    }
+
+
+def _handle_build_improvement_prompt(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    session = _require_session(arguments["session_id"])
+    job_text = (
+        arguments.get("job_description_text")
+        or session.job_description_text
+        or ""
+    ).strip()
+    if not job_text:
+        return {
+            "success": False,
+            "message": "job_description_text is required (argument or prior upload)",
+        }
+
+    if arguments.get("feedback_file"):
+        feedback = load_feedback_from_file(arguments["feedback_file"])
+    else:
+        feedback = session.handler.get_report_feedback()
+
+    resume_text = arguments.get("resume_text") or session.handler.get_editor_resume_text()
+    prompt = build_improvement_prompt(
+        resume_text=resume_text,
+        job_description=job_text,
+        feedback=feedback,
+        instructions_path=arguments.get("prompt_instructions_file"),
+    )
+
+    return {
+        "success": True,
+        "prompt": prompt,
+        "feedback": feedback.to_dict(),
+        "message": "Improvement prompt generated",
+    }
+
+
+def _handle_apply_ai_fixes(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    session = _require_session(arguments["session_id"])
+    max_fixes = int(arguments.get("max_fixes", 5))
+    fixes_applied = session.handler.apply_ai_fixes(max_fixes=max_fixes)
+
+    if fixes_applied == 0:
+        return {
+            "success": False,
+            "fixes_applied": 0,
+            "message": "No Fix with AI buttons were found",
+        }
+
+    if arguments.get("trigger_analysis", True):
+        session.handler.trigger_analysis()
+
+    score = session.handler.get_score()
+    return {
+        "success": True,
+        "fixes_applied": fixes_applied,
+        "score": score,
+        "message": f"Applied {fixes_applied} AI fix(es)",
+    }
+
+
+def _handle_improve_resume_until_target(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    session = _require_session(arguments["session_id"])
+    result = improve_resume_until_target(
+        session.handler,
+        target_score=int(arguments.get("target_score", 95)),
+        max_rounds=int(arguments.get("max_rounds", 5)),
+        max_fixes_per_round=int(arguments.get("max_fixes_per_round", 5)),
+        wait_between_rounds_sec=int(arguments.get("wait_between_rounds_sec", 8)),
+        job_description=arguments.get("job_description_text") or session.job_description_text,
+    )
+    result["success"] = bool(result.get("success"))
+    return result
+
 def _handle_end_browser_session(arguments: Dict[str, Any]) -> Dict[str, Any]:
     session_id = arguments["session_id"]
     if not end_session(session_id):
@@ -307,6 +398,10 @@ TOOL_HANDLERS = {
     "trigger_analysis": _handle_trigger_analysis,
     "poll_score_until_target": _handle_poll_score_until_target,
     "download_tailored_resume": _handle_download_tailored_resume,
+    "get_resume_feedback": _handle_get_resume_feedback,
+    "build_improvement_prompt": _handle_build_improvement_prompt,
+    "apply_ai_fixes": _handle_apply_ai_fixes,
+    "improve_resume_until_target": _handle_improve_resume_until_target,
     "end_browser_session": _handle_end_browser_session,
 }
 
@@ -405,6 +500,62 @@ async def list_tools() -> list[types.Tool]:
                     "session_id": {"type": "string"},
                     "output_dir": {"type": "string"},
                     "resume_name": {"type": "string", "description": "Partial dashboard resume name"},
+                },
+                "required": ["session_id"],
+            },
+        ),
+        types.Tool(
+            name="get_resume_feedback",
+            description="Get structured resume feedback from the Report tab or a feedback file.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "feedback_file": {"type": "string", "description": "Optional resumefeedback.txt path"},
+                },
+                "required": ["session_id"],
+            },
+        ),
+        types.Tool(
+            name="build_improvement_prompt",
+            description="Build an LLM prompt to rewrite the resume using feedback and job description.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "job_description_text": {"type": "string"},
+                    "feedback_file": {"type": "string"},
+                    "resume_text": {"type": "string"},
+                    "prompt_instructions_file": {"type": "string"},
+                },
+                "required": ["session_id"],
+            },
+        ),
+        types.Tool(
+            name="apply_ai_fixes",
+            description="Click ResumeUp Fix with AI buttons on the Report tab.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "max_fixes": {"type": "integer", "default": 5},
+                    "trigger_analysis": {"type": "boolean", "default": True},
+                },
+                "required": ["session_id"],
+            },
+        ),
+        types.Tool(
+            name="improve_resume_until_target",
+            description="Iteratively apply AI fixes and re-analyse until a target score is reached.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "session_id": {"type": "string"},
+                    "target_score": {"type": "integer", "default": 95},
+                    "max_rounds": {"type": "integer", "default": 5},
+                    "max_fixes_per_round": {"type": "integer", "default": 5},
+                    "wait_between_rounds_sec": {"type": "integer", "default": 8},
+                    "job_description_text": {"type": "string"},
                 },
                 "required": ["session_id"],
             },
