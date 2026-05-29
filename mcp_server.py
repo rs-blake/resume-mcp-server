@@ -16,6 +16,15 @@ from mcp.server import Server
 from mcp.server.stdio import stdio_server
 
 from job_parser import parse_job_description
+from application_orchestrator import (
+    get_application_history,
+    run_apply_from_queue,
+    run_search_and_tailor,
+)
+from application_store import update_application_status
+from linkedin_job_scraper import get_job_details
+from linkedin_job_search import search_jobs
+from linkedin_processor import LinkedInProcessor
 from resume_processor import ResumeProcessor
 from resumeup_workflow import run_tailor_and_download
 from session_manager import create_session, end_session, get_session
@@ -380,6 +389,139 @@ def _handle_end_browser_session(arguments: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _run_with_linkedin(arguments: Dict[str, Any], callback):
+    """Initialize LinkedIn browser, authenticate, and run callback."""
+    linkedin = LinkedInProcessor()
+    headless = _resolve_headless(arguments.get("headless"))
+    if arguments.get("headless") is None:
+        headless = os.getenv("LINKEDIN_HEADLESS", "false").lower() in {"1", "true", "yes"}
+
+    close_session = bool(arguments.get("close_linkedin_session", True))
+    try:
+        linkedin.init_browser(headless=headless)
+        email = arguments.get("linkedin_email") or os.getenv("LINKEDIN_EMAIL")
+        password = arguments.get("linkedin_password") or os.getenv("LINKEDIN_PASSWORD")
+        if not linkedin.ensure_logged_in(email, password):
+            return {"success": False, "message": "Failed to authenticate with LinkedIn"}
+        return callback(linkedin)
+    finally:
+        if close_session:
+            linkedin.close_browser()
+
+
+def _handle_linkedin_search_jobs(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    keywords = (arguments.get("keywords") or "").strip()
+    if not keywords:
+        return {"success": False, "message": "keywords is required"}
+
+    def _search(linkedin: LinkedInProcessor) -> Dict[str, Any]:
+        listings = search_jobs(
+            linkedin,
+            keywords=keywords,
+            location=arguments.get("location", ""),
+            easy_apply_only=bool(arguments.get("easy_apply_only", True)),
+            remote_only=bool(arguments.get("remote_only", False)),
+            limit=int(arguments.get("limit", 20)),
+        )
+        return {
+            "success": True,
+            "count": len(listings),
+            "jobs": [job.to_dict() for job in listings],
+            "message": f"Found {len(listings)} job listing(s)",
+        }
+
+    return _run_with_linkedin(arguments, _search)
+
+
+def _handle_linkedin_get_job_details(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    job_url = (arguments.get("job_url") or "").strip()
+    if not job_url:
+        return {"success": False, "message": "job_url is required"}
+
+    def _details(linkedin: LinkedInProcessor) -> Dict[str, Any]:
+        details = get_job_details(linkedin, job_url)
+        if details is None:
+            return {"success": False, "message": f"Failed to scrape job details: {job_url}"}
+        return {
+            "success": True,
+            "job": details.to_dict(),
+            "message": f"Scraped job: {details.title} at {details.company}",
+        }
+
+    return _run_with_linkedin(arguments, _details)
+
+
+def _handle_search_and_tailor(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    keywords = (arguments.get("keywords") or "").strip()
+    if not keywords:
+        return {"success": False, "message": "keywords is required"}
+
+    profile_skills = arguments.get("profile_skills")
+    if isinstance(profile_skills, str):
+        profile_skills = [skill.strip() for skill in profile_skills.split(",") if skill.strip()]
+
+    return run_search_and_tailor(
+        keywords=keywords,
+        location=arguments.get("location", ""),
+        easy_apply_only=bool(arguments.get("easy_apply_only", True)),
+        remote_only=bool(arguments.get("remote_only", False)),
+        limit=int(arguments.get("limit", 5)),
+        min_match_score=float(arguments.get("min_match_score", 0.0)),
+        profile_skills=profile_skills,
+        output_dir=arguments.get("output_dir"),
+        resume_session_id=arguments.get("session_id"),
+        file_path=arguments.get("file_path"),
+        resume_id=arguments.get("resume_id"),
+        resume_name=arguments.get("resume_name"),
+        target_score=int(arguments.get("target_score", 95)),
+        max_attempts=int(arguments.get("max_attempts", 8)),
+        linkedin_email=arguments.get("linkedin_email"),
+        linkedin_password=arguments.get("linkedin_password"),
+        headless=arguments.get("headless"),
+        close_linkedin_session=bool(arguments.get("close_linkedin_session", True)),
+    )
+
+
+def _handle_get_application_history(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    return get_application_history(
+        status=arguments.get("status"),
+        limit=int(arguments.get("limit", 50)),
+    )
+
+
+def _handle_approve_application(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    application_id = arguments.get("application_id")
+    if not application_id:
+        return {"success": False, "message": "application_id is required"}
+
+    application = update_application_status(application_id, "approved")
+    if application is None:
+        return {"success": False, "message": f"Application not found: {application_id}"}
+
+    return {
+        "success": True,
+        "application": application.to_dict(),
+        "message": f"Application approved: {application.title}",
+    }
+
+
+def _handle_linkedin_easy_apply(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    application_id = arguments.get("application_id")
+    if not application_id:
+        return {"success": False, "message": "application_id is required"}
+
+    return run_apply_from_queue(
+        application_id=application_id,
+        require_approval=bool(arguments.get("require_approval", True)),
+        submit=bool(arguments.get("submit", False)),
+        max_custom_questions=int(arguments.get("max_custom_questions", 3)),
+        linkedin_email=arguments.get("linkedin_email"),
+        linkedin_password=arguments.get("linkedin_password"),
+        headless=arguments.get("headless"),
+        close_linkedin_session=bool(arguments.get("close_linkedin_session", True)),
+    )
+
+
 TOOL_HANDLERS = {
     "start_browser_session": _handle_start_browser_session,
     "upload_resume": _handle_upload_resume,
@@ -394,6 +536,12 @@ TOOL_HANDLERS = {
     "improve_resume_until_target": _handle_improve_resume_until_target,
     "tailor_and_download": _handle_tailor_and_download,
     "end_browser_session": _handle_end_browser_session,
+    "linkedin_search_jobs": _handle_linkedin_search_jobs,
+    "linkedin_get_job_details": _handle_linkedin_get_job_details,
+    "search_and_tailor": _handle_search_and_tailor,
+    "get_application_history": _handle_get_application_history,
+    "approve_application": _handle_approve_application,
+    "linkedin_easy_apply": _handle_linkedin_easy_apply,
 }
 
 
@@ -506,7 +654,7 @@ async def list_tools() -> list[types.Tool]:
                 "required": ["session_id"],
             },
         ),
-types.Tool(
+        types.Tool(
             name="apply_ai_fixes",
             description="Click ResumeUp Fix with AI buttons on the Report tab.",
             inputSchema={
@@ -535,13 +683,141 @@ types.Tool(
                 "required": ["session_id"],
             },
         ),
-types.Tool(
+        types.Tool(
+            name="tailor_and_download",
+            description="One-shot ResumeUp pipeline: upload resume, tailor to job description, download PDF.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_description_text": {"type": "string"},
+                    "job_desc_file": {"type": "string"},
+                    "session_id": {"type": "string"},
+                    "email": {"type": "string"},
+                    "password": {"type": "string"},
+                    "headless": {"type": "boolean"},
+                    "file_path": {"type": "string"},
+                    "resume_id": {"type": "string"},
+                    "resume_name": {"type": "string"},
+                    "target_score": {"type": "integer", "default": 95},
+                    "max_attempts": {"type": "integer", "default": 8},
+                    "output_dir": {"type": "string"},
+                    "close_session": {"type": "boolean", "default": False},
+                },
+            },
+        ),
+        types.Tool(
             name="end_browser_session",
             description="Close a browser session and release resources.",
             inputSchema={
                 "type": "object",
                 "properties": {"session_id": {"type": "string"}},
                 "required": ["session_id"],
+            },
+        ),
+        types.Tool(
+            name="linkedin_search_jobs",
+            description="Search LinkedIn jobs and return listings (Easy Apply filter supported).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keywords": {"type": "string"},
+                    "location": {"type": "string"},
+                    "easy_apply_only": {"type": "boolean", "default": True},
+                    "remote_only": {"type": "boolean", "default": False},
+                    "limit": {"type": "integer", "default": 20},
+                    "linkedin_email": {"type": "string"},
+                    "linkedin_password": {"type": "string"},
+                    "headless": {"type": "boolean"},
+                    "close_linkedin_session": {"type": "boolean", "default": True},
+                },
+                "required": ["keywords"],
+            },
+        ),
+        types.Tool(
+            name="linkedin_get_job_details",
+            description="Scrape full job description and metadata from a LinkedIn job URL.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "job_url": {"type": "string"},
+                    "linkedin_email": {"type": "string"},
+                    "linkedin_password": {"type": "string"},
+                    "headless": {"type": "boolean"},
+                    "close_linkedin_session": {"type": "boolean", "default": True},
+                },
+                "required": ["job_url"],
+            },
+        ),
+        types.Tool(
+            name="search_and_tailor",
+            description="Search LinkedIn Easy Apply jobs, tailor resumes via ResumeUp, and populate the review queue.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "keywords": {"type": "string"},
+                    "location": {"type": "string"},
+                    "easy_apply_only": {"type": "boolean", "default": True},
+                    "remote_only": {"type": "boolean", "default": False},
+                    "limit": {"type": "integer", "default": 5},
+                    "min_match_score": {"type": "number", "default": 0.0},
+                    "profile_skills": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Candidate skills for job matching (falls back to PROFILE_SKILLS env)",
+                    },
+                    "output_dir": {"type": "string"},
+                    "session_id": {"type": "string", "description": "Existing ResumeUp session ID"},
+                    "file_path": {"type": "string", "description": "Base resume file to upload"},
+                    "resume_id": {"type": "string"},
+                    "resume_name": {"type": "string"},
+                    "target_score": {"type": "integer", "default": 95},
+                    "max_attempts": {"type": "integer", "default": 8},
+                    "linkedin_email": {"type": "string"},
+                    "linkedin_password": {"type": "string"},
+                    "headless": {"type": "boolean"},
+                    "close_linkedin_session": {"type": "boolean", "default": True},
+                },
+                "required": ["keywords"],
+            },
+        ),
+        types.Tool(
+            name="get_application_history",
+            description="List queued job applications (discovered, tailored, approved, applied, skipped, failed).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "status": {"type": "string"},
+                    "limit": {"type": "integer", "default": 50},
+                },
+            },
+        ),
+        types.Tool(
+            name="approve_application",
+            description="Mark a tailored application as approved and ready for Easy Apply.",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "application_id": {"type": "string"},
+                },
+                "required": ["application_id"],
+            },
+        ),
+        types.Tool(
+            name="linkedin_easy_apply",
+            description="Run LinkedIn Easy Apply for a queued application (assist mode by default).",
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "application_id": {"type": "string"},
+                    "require_approval": {"type": "boolean", "default": True},
+                    "submit": {"type": "boolean", "default": False},
+                    "max_custom_questions": {"type": "integer", "default": 3},
+                    "linkedin_email": {"type": "string"},
+                    "linkedin_password": {"type": "string"},
+                    "headless": {"type": "boolean"},
+                    "close_linkedin_session": {"type": "boolean", "default": True},
+                },
+                "required": ["application_id"],
             },
         ),
     ]
