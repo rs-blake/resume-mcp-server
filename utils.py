@@ -143,6 +143,21 @@ def find_resume_score(page) -> Optional[int]:
 
 def handle_ai_dialog(page) -> int:
     """Wait for AI suggestion dialog, click Apply buttons, and close dialog."""
+    dialog_deadline = time.time() + 6
+    while time.time() < dialog_deadline:
+        portal = page.locator("#headlessui-portal-root")
+        if portal.count():
+            try:
+                portal_text = portal.first.inner_text()
+                if re.search(r"add.with.ai|fix.with.ai", portal_text, re.I):
+                    break
+            except Exception:
+                pass
+        time.sleep(1)
+    else:
+        logger.debug("No AI dialog appeared (direct-action button); skipping")
+        return 0
+
     deadline = time.time() + 30
     while time.time() < deadline:
         portal = page.locator("#headlessui-portal-root")
@@ -166,7 +181,9 @@ def handle_ai_dialog(page) -> int:
         }"""
         )
         if any(re.search(r"^apply$", text, re.I) for text in btn_texts):
+            logger.debug("AI dialog Apply buttons loaded: %s", btn_texts)
             break
+        logger.debug("AI dialog open, Apply not yet loaded (buttons=%s)", btn_texts)
         time.sleep(2)
     else:
         logger.warning("Timed out waiting for AI dialog Apply buttons")
@@ -310,3 +327,70 @@ def select_template_if_needed(page, timeout: int = 120) -> bool:
             logger.warning("Template selection navigation failed: %s", exc)
             return False
     return False
+
+def improve_until_target(
+    page,
+    target_score: int,
+    dry_run: bool = False,
+    timeout: int = 120,
+    max_attempts: int = 8,
+) -> tuple[Optional[int], int]:
+    """Run the score improvement loop from the latest resumeup_tailor.py script."""
+    if dry_run:
+        logger.info("DRY RUN: would poll score until %s", target_score)
+        return 0, 0
+
+    logger.info("Starting score evaluation loop...")
+    best_score = None
+    attempts = 0
+
+    while attempts < max_attempts:
+        attempts += 1
+        dismiss_editing_conflict(page)
+        navigate_to_report_tab(page, min(timeout, 60))
+        wait_for_navigation(page, timeout)
+
+        score = find_resume_score(page)
+        if score is not None:
+            best_score = score
+            logger.info("Found resume score: %s", score)
+            if score >= target_score:
+                logger.info("Target score %s reached", target_score)
+                return score, attempts
+        else:
+            logger.warning("Unable to detect the current score yet")
+
+        analyze_my = page.locator(
+            "button:visible:not([disabled])",
+            has_text=re.compile(r"analyze.my.resume", re.I),
+        )
+        if analyze_my.count():
+            logger.info("Clicking Analyze My Resume")
+            analyze_my.first.click(timeout=10000)
+            time.sleep(10)
+            continue
+
+        applied = apply_ai_suggestions(page, max_per_round=5)
+        if applied > 0:
+            logger.info("Applied %s AI suggestion(s); returning to Report tab", applied)
+            navigate_to_report_tab(page, 30)
+            time.sleep(2)
+
+        clicked = wait_and_click_reanalyse(page, max_wait=45)
+        if not clicked:
+            if applied == 0:
+                logger.warning("No AI suggestions or analyze button available; ending loop")
+                break
+            logger.warning("Re-analyse not clickable after suggestions; retrying next round")
+        else:
+            time.sleep(12)
+
+        if score is not None and score >= target_score:
+            return score, attempts
+
+    if best_score is not None:
+        logger.info("Stopped after %s attempts; best score was %s", attempts, best_score)
+        return best_score, attempts
+
+    raise RuntimeError("Could not complete score review or detect the resume score")
+

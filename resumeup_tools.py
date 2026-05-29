@@ -224,49 +224,19 @@ class ResumeUpHandler:
         wait_between_attempts: int = 8,
     ) -> tuple[Optional[int], int]:
         """Improve score using Analyze -> AI suggestions -> Re-analyse loop."""
-        logger.info("Starting score improvement loop (target=%s)", target_score)
-        best_score = None
-        attempts = 0
+        from utils import improve_until_target as improve_page_until_target
 
-        while attempts < max_attempts:
-            attempts += 1
-            dismiss_editing_conflict(self.page)
-            navigate_to_report_tab(self.page, min(self.timeout, 60))
-            wait_for_navigation(self.page, self.timeout)
-
-            score = find_resume_score(self.page)
-            if score is not None:
-                best_score = score
-                logger.info("Score check %s/%s: %s", attempts, max_attempts, score)
-                if score >= target_score:
-                    return score, attempts
-            else:
-                logger.warning("Unable to detect score on attempt %s", attempts)
-
-            analyze_my = self.page.locator(
-                "button:visible:not([disabled])",
-                has_text=re.compile(r"analyze.my.resume", re.I),
+        try:
+            return improve_page_until_target(
+                self.page,
+                target_score=target_score,
+                dry_run=False,
+                timeout=self.timeout,
+                max_attempts=max_attempts,
             )
-            if analyze_my.count():
-                analyze_my.first.click(timeout=10000)
-                time.sleep(10)
-                continue
-
-            applied = apply_ai_suggestions(self.page, max_per_round=5)
-            if applied > 0:
-                navigate_to_report_tab(self.page, 30)
-                time.sleep(2)
-
-            clicked = wait_and_click_reanalyse(self.page, max_wait=45)
-            if not clicked:
-                if applied == 0:
-                    logger.warning("No AI suggestions or analyse button available")
-                    break
-                logger.warning("Re-analyse not clickable; retrying next round")
-            else:
-                time.sleep(max(wait_between_attempts, 12))
-
-        return best_score, attempts
+        except RuntimeError:
+            score = find_resume_score(self.page)
+            return score, max_attempts
 
     def poll_score_until_target(
         self,
